@@ -1,1 +1,1 @@
-# Computer-Vision-Based-Wildfire-Detection-Using-a-Hybrid-YoLo-Model-
+# Computer-Vision-Based-Wildfire-Detection-Using-YoLo-Model-
