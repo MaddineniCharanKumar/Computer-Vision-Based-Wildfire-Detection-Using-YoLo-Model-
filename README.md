@@ -1,11 +1,30 @@
-# FIREGUARD AI
+from __future__ import annotations
 
-This repository is now a production-oriented foundation for wildfire intelligence. It includes modular API layers, dynamic device detection, risk scoring concepts, a practical dataset inspection workflow, and a dashboard front-end shell.
+import os
+from datetime import datetime, timedelta, timezone
+from typing import Any
 
-Use the real dataset inspection script before running model training or evaluation:
+import jwt
+from passlib.context import CryptContext
 
-```bash
-python scripts/inspect_dataset.py --dataset /path/to/fasdd --output reports
-```
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-Then inspect the generated JSON report and continue to model configuration and training.
+
+def hash_password(password: str) -> str:
+    return pwd_context.hash(password)
+
+
+def verify_password(password: str, hashed_password: str) -> bool:
+    return pwd_context.verify(password, hashed_password)
+
+
+def create_token(subject: str, secret: str | None = None, ttl_minutes: int = 60) -> str:
+    secret = secret or os.getenv("JWT_SECRET", "dev-secret-change-me")
+    now = datetime.now(timezone.utc)
+    payload = {"sub": subject, "iat": int(now.timestamp()), "exp": int((now + timedelta(minutes=ttl_minutes)).timestamp())}
+    return jwt.encode(payload, secret, algorithm="HS256")
+
+
+def verify_token(token: str, secret: str | None = None) -> dict[str, Any]:
+    secret = secret or os.getenv("JWT_SECRET", "dev-secret-change-me")
+    return jwt.decode(token, secret, algorithms=["HS256"])
