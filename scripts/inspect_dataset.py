@@ -1,51 +1,210 @@
+from __future__ import annotations
+
+import argparse
+import hashlib
+import html
+import json
+from collections import Counter, defaultdict
+from datetime import datetime, timezone
 from pathlib import Path
-import argparse, hashlib, json, imghdr, xml.etree.ElementTree as ET
-from collections import Counter
+from typing import Any
+
 from PIL import Image
 
-IMAGE_EXTS={".jpg",".jpeg",".png",".bmp",".tif",".tiff",".webp"}
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"}
+LABEL_EXTENSIONS = {".txt", ".xml", ".json"}
 
-def parse_yolo(path):
-    boxes=[]
-    for line_no,line in enumerate(path.read_text(errors="replace").splitlines(),1):
-        if not line.strip(): continue
-        p=line.split()
-        if len(p)!=5: raise ValueError(f"line {line_no}: expected 5 fields")
-        c=int(p[0]); vals=list(map(float,p[1:])); boxes.append((c,*vals))
+
+def is_image(path: Path) -> bool:
+    return path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS
+
+
+def is_label(path: Path) -> bool:
+    return path.is_file() and path.suffix.lower() in LABEL_EXTENSIONS
+
+
+def detect_annotation_format(paths: list[Path]) -> list[str]:
+    formats: list[str] = []
+    suffixes = {p.suffix.lower() for p in paths}
+    if ".txt" in suffixes:
+        formats.append("YOLO")
+    if ".xml" in suffixes:
+        formats.append("VOC/XML")
+    if ".json" in suffixes:
+        formats.append("COCO/JSON")
+    if not formats:
+        formats.append("UNKNOWN")
+    return formats
+
+
+def parse_yolo_label(path: Path) -> list[dict[str, Any]]:
+    boxes: list[dict[str, Any]] = []
+    for line_number, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), start=1):
+        if not line.strip():
+            continue
+        parts = line.strip().split()
+        if len(parts) != 5:
+            raise ValueError(f"{path}: line {line_number} does not have 5 YOLO fields")
+        class_id, x_center, y_center, width, height = [float(part) if idx else int(part) for idx, part in enumerate(parts)]
+        boxes.append({
+            "class_id": class_id,
+            "x_center": x_center,
+            "y_center": y_center,
+            "width": width,
+            "height": height,
+        })
     return boxes
 
-def inspect(root:Path):
-    images=[p for p in root.rglob("*") if p.suffix.lower() in IMAGE_EXTS]
-    labels=list(root.rglob("*.txt")); xmls=list(root.rglob("*.xml")); jsons=list(root.rglob("*.json"))
-    report={"dataset":str(root),"inspected_at":__import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat(),"counts":{"images":len(images),"label_files":len(labels),"xml_files":len(xmls),"json_files":len(jsons)},"annotation_formats":[],"classes":{},"missing_labels":[],"orphan_labels":[],"corrupted_files":[],"invalid_boxes":[],"duplicates":[],"quality":{"status":"PASS","issues":[]}}
-    if labels: report["annotation_formats"].append("YOLO")
-    if xmls: report["annotation_formats"].append("VOC/XML")
-    if jsons: report["annotation_formats"].append("COCO/JSON")
-    image_stems={p.with_suffix('').name for p in images}; label_stems={p.with_suffix('').name for p in labels}
-    report["missing_labels"]=[str(p) for p in images if p.with_suffix('.txt').exists() is False and p.with_suffix('.xml').exists() is False]
-    report["orphan_labels"]=[str(p) for p in labels if p.stem not in image_stems]
-    hashes={}
-    for p in images+labels:
+
+def box_is_valid(box: dict[str, Any]) -> bool:
+    x_center = float(box["x_center"])
+    y_center = float(box["y_center"])
+    width = float(box["width"])
+    height = float(box["height"])
+    if width <= 0 or height <= 0:
+        return False
+    if not (0.0 <= x_center <= 1.0 and 0.0 <= y_center <= 1.0):
+        return False
+    if not (0.0 < width <= 1.0 and 0.0 < height <= 1.0):
+        return False
+    x_min = x_center - (width / 2.0)
+    x_max = x_center + (width / 2.0)
+    y_min = y_center - (height / 2.0)
+    y_max = y_center + (height / 2.0)
+    return 0.0 <= x_min and x_max <= 1.0 and 0.0 <= y_min and y_max <= 1.0
+
+
+def compute_sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(8192), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def inspect_dataset(dataset_root: Path) -> dict[str, Any]:
+    dataset_root = dataset_root.resolve()
+    images = sorted(p for p in dataset_root.rglob("*") if is_image(p))
+    labels = sorted(p for p in dataset_root.rglob("*") if is_label(p))
+    image_stems = {p.stem for p in images}
+    missing_labels: list[str] = []
+    orphan_labels: list[str] = []
+    invalid_boxes: list[dict[str, Any]] = []
+    corrupted_files: list[dict[str, Any]] = []
+    duplicates: list[dict[str, Any]] = []
+    class_counts: Counter[int] = Counter()
+    label_classes: set[int] = set()
+    sha_map: dict[str, str] = {}
+
+    for image in images:
         try:
-            if p in images: Image.open(p).verify()
-            digest=hashlib.sha256(p.read_bytes()).hexdigest()
-            if digest in hashes: report["duplicates"].append({"file":str(p),"same_as":hashes[digest]})
-            else: hashes[digest]=str(p)
-        except Exception as e: report["corrupted_files"].append({"file":str(p),"error":str(e)})
-    for p in labels:
-        try:
-            for c,x,y,w,h in parse_yolo(p):
-                report["classes"][str(c)]=report["classes"].get(str(c),0)+1
-                if not (0<=x<=1 and 0<=y<=1 and 0<w<=1 and 0<h<=1 and x-w/2>=0 and x+w/2<=1 and y-h/2>=0 and y+h/2<=1): report["invalid_boxes"].append({"file":str(p),"class":c,"box":[x,y,w,h]})
-        except Exception as e: report["quality"]["issues"].append({"file":str(p),"error":str(e)})
-    issues=sum(len(report[k]) for k in ("missing_labels","orphan_labels","corrupted_files","invalid_boxes","duplicates"))+len(report["quality"]["issues"])
-    report["quality"]={"status":"WARN" if issues else "PASS","issue_count":issues,"issues":report["quality"]["issues"]}
+            with Image.open(image) as img:
+                img.verify()
+        except Exception as exc:
+            corrupted_files.append({"file": str(image.relative_to(dataset_root)), "error": str(exc)})
+        if not any((image.with_suffix(".txt")).exists(), (image.with_suffix(".xml")).exists(), (image.with_suffix(".json")).exists()):
+            missing_labels.append(str(image.relative_to(dataset_root)))
+
+    for label in labels:
+        relative = str(label.relative_to(dataset_root))
+        stem = label.stem
+        if label.suffix.lower() == ".txt":
+            if stem not in image_stems:
+                orphan_labels.append(relative)
+            try:
+                boxes = parse_yolo_label(label)
+                for box in boxes:
+                    class_id = int(box["class_id"])
+                    label_classes.add(class_id)
+                    class_counts[class_id] += 1
+                    if not box_is_valid(box):
+                        invalid_boxes.append({"file": relative, "box": box})
+            except Exception as exc:
+                corrupted_files.append({"file": relative, "error": str(exc)})
+
+    for path in images + labels:
+        digest = compute_sha256(path)
+        if digest in sha_map:
+            duplicates.append({"file": str(path.relative_to(dataset_root)), "same_as": sha_map[digest]})
+        else:
+            sha_map[digest] = str(path.relative_to(dataset_root))
+
+    quality_issues = []
+    if missing_labels:
+        quality_issues.append({"issue": "missing_labels", "count": len(missing_labels)})
+    if orphan_labels:
+        quality_issues.append({"issue": "orphan_labels", "count": len(orphan_labels)})
+    if corrupted_files:
+        quality_issues.append({"issue": "corrupted_files", "count": len(corrupted_files)})
+    if invalid_boxes:
+        quality_issues.append({"issue": "invalid_boxes", "count": len(invalid_boxes)})
+    if duplicates:
+        quality_issues.append({"issue": "duplicates", "count": len(duplicates)})
+
+    quality_status = "PASS" if not quality_issues else "WARN"
+    report = {
+        "dataset": str(dataset_root),
+        "inspected_at": datetime.now(timezone.utc).isoformat(),
+        "counts": {
+            "images": len(images),
+            "annotations": len(labels),
+            "classes_detected": len(class_counts),
+            "label_files": len(labels),
+            "xml_files": len([p for p in labels if p.suffix.lower() == ".xml"]),
+            "json_files": len([p for p in labels if p.suffix.lower() == ".json"]),
+        },
+        "annotation_formats": detect_annotation_format(labels),
+        "classes": {str(key): value for key, value in sorted(class_counts.items())},
+        "missing_labels": missing_labels,
+        "orphan_labels": orphan_labels,
+        "corrupted_files": corrupted_files,
+        "invalid_boxes": invalid_boxes,
+        "duplicates": duplicates,
+        "quality": {
+            "status": quality_status,
+            "issues": quality_issues,
+            "issue_count": sum(item["count"] for item in quality_issues),
+        },
+    }
     return report
 
-def main():
-    ap=argparse.ArgumentParser(); ap.add_argument('--dataset',type=Path,required=True); ap.add_argument('--output',type=Path,default=Path('reports')); a=ap.parse_args(); a.output.mkdir(parents=True,exist_ok=True)
-    r=inspect(a.dataset); (a.output/'dataset_report.json').write_text(json.dumps(r,indent=2));
-    rows=''.join(f'<tr><td>{k}</td><td>{v}</td></tr>' for k,v in r['counts'].items())
-    (a.output/'dataset_report.html').write_text(f'<html><body><h1>FIREGUARD Dataset Report</h1><p>Status: {r["quality"]["status"]}</p><table>{rows}</table><pre>{json.dumps(r,indent=2)}</pre></body></html>')
-    print(json.dumps(r,indent=2))
-if __name__=='__main__': main()
+
+def build_html_report(report: dict[str, Any]) -> str:
+    safe = json.dumps(report, indent=2)
+    rows = "".join(
+        f"<tr><td>{html.escape(str(key))}</td><td>{html.escape(str(value))}</td></tr>"
+        for key, value in report["counts"].items()
+    )
+    return f"""
+    <html>
+      <head><meta charset="utf-8"><title>FIREGUARD Dataset Report</title></head>
+      <body style="font-family:Arial,sans-serif;padding:24px;">
+        <h1>FIREGUARD Dataset Report</h1>
+        <p><strong>Status:</strong> {report['quality']['status']}</p>
+        <table border="1" cellpadding="6" cellspacing="0">
+          <thead><tr><th>Metric</th><th>Value</th></tr></thead>
+          <tbody>{rows}</tbody>
+        </table>
+        <pre style="white-space:pre-wrap;">{html.escape(safe)}</pre>
+      </body>
+    </html>
+    """
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Inspect dataset structure for FIREGUARD AI.")
+    parser.add_argument("--dataset", type=Path, required=True, help="Dataset root directory")
+    parser.add_argument("--output", type=Path, default=Path("reports"), help="Where to store report files")
+    args = parser.parse_args()
+    output_dir = args.output.resolve(); output_dir.mkdir(parents=True, exist_ok=True)
+
+    report = inspect_dataset(args.dataset)
+    json_path = output_dir / "dataset_report.json"
+    html_path = output_dir / "dataset_report.html"
+    json_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    html_path.write_text(build_html_report(report), encoding="utf-8")
+    print(json.dumps(report, indent=2))
+
+
+if __name__ == "__main__":
+    main()

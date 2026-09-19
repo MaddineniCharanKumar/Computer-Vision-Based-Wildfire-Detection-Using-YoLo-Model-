@@ -1,30 +1,57 @@
-from __future__ import annotations
+# FIREGUARD AI
 
-import os
-from datetime import datetime, timedelta, timezone
-from typing import Any
+Production-focused wildfire intelligence stack for dataset inspection, detection, temporal verification, risk estimation, alerts and dashboard monitoring.
 
-import jwt
-from passlib.context import CryptContext
+## 1. Dataset inspection
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+Before any training or inference, inspect the real dataset:
 
+```bash
+python scripts/inspect_dataset.py --dataset /path/to/fasdd --output reports
+```
 
-def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+This produces:
+- `reports/dataset_report.json`
+- `reports/dataset_report.html`
 
+It automatically detects:
+- image counts
+- annotation file counts
+- YOLO / VOC/XML / COCO/JSON formats
+- missing labels
+- orphan labels
+- duplicates
+- corrupted files
+- invalid bounding boxes
 
-def verify_password(password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(password, hashed_password)
+## 2. Prepare data
 
+```bash
+python scripts/setup_project.py
+python scripts/prepare_dataset.py --source /path/to/fasdd --output data/processed
+```
 
-def create_token(subject: str, secret: str | None = None, ttl_minutes: int = 60) -> str:
-    secret = secret or os.getenv("JWT_SECRET", "dev-secret-change-me")
-    now = datetime.now(timezone.utc)
-    payload = {"sub": subject, "iat": int(now.timestamp()), "exp": int((now + timedelta(minutes=ttl_minutes)).timestamp())}
-    return jwt.encode(payload, secret, algorithm="HS256")
+## 3. Train
 
+```bash
+python training/train.py --data data/processed/dataset.yaml --weights yolo11n.pt --epochs 50 --batch 16
+```
 
-def verify_token(token: str, secret: str | None = None) -> dict[str, Any]:
-    secret = secret or os.getenv("JWT_SECRET", "dev-secret-change-me")
-    return jwt.decode(token, secret, algorithms=["HS256"])
+## 4. Evaluate
+
+```bash
+python training/evaluate.py --weights runs/train/exp/weights/best.pt --data data/processed/dataset.yaml
+```
+
+## 5. Run API
+
+```bash
+uvicorn fireguard.api:app --reload
+```
+
+## Scientific limitations
+
+- bounding-box area is a visual proxy, not true fire area
+- spread direction is estimated visual motion, not true propagation
+- risk score is an environmental-visual estimate, not future certainty
+- no fake metrics, no fake weather, no fake GPS, no fake GPU telemetry
