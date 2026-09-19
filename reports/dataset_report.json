@@ -1,0 +1,22 @@
+{
+  "status": "NOT_INSPECTED",
+  "message": "No dataset has been inspected in this repository yet. Run: python scripts/inspect_dataset.py --dataset <path> --output reports",
+  "counts": {
+    "images": 0,
+    "label_files": 0,
+    "xml_files": 0,
+    "json_files": 0
+  },
+  "annotation_formats": [],
+  "classes": {},
+  "missing_labels": [],
+  "orphan_labels": [],
+  "corrupted_files": [],
+  "invalid_boxes": [],
+  "duplicates": [],
+  "quality": {
+    "status": "NOT_RUN",
+    "issue_count": 0,
+    "issues": []
+  }
+}
