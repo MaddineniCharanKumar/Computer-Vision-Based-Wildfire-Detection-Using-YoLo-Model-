@@ -1,14 +1,19 @@
-# .gitignore
+# Local data and generated artifacts
 
-__pycache__/
-.venv/
-.env
-*.pyc
-*.pyo
-*.log
-.pytest_cache/
-.ipynb_checkpoints/
-.DS_Store
-models/
+data/raw/
+data/processed/
+data/train/
+data/val/
+data/test/
+datasets/
 runs/
+models/
 *.pt
+*.onnx
+*.engine
+*.zip
+*.7z
+*.rar
+*.tar
+*.tar.gz
+.env
