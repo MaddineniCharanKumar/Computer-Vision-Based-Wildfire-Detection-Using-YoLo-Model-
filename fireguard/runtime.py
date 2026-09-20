@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import json
-from datetime import datetime, timezone
 from typing import Any
 
 
@@ -15,7 +13,7 @@ class FireguardRuntime:
             "model_path": self.model_path,
             "device": self.device,
             "status": "READY" if self.model_path else "UNAVAILABLE",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
             "note": "Model weights are required before inference can run.",
         }
 
@@ -30,8 +28,3 @@ class ModelRuntime:
             "ready": bool(self.weights_path),
             "note": "Real YOLO weights are required before production inference.",
         }
-
-
-if __name__ == "__main__":
-    runtime = FireguardRuntime()
-    print(json.dumps(runtime.get_status(), indent=2))

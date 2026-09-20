@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
@@ -43,17 +41,6 @@ class ConnectionManager:
         if websocket in self.connections:
             self.connections.remove(websocket)
 
-    async def broadcast(self, payload: dict[str, Any]) -> None:
-        message = json.dumps(payload, default=str)
-        stale: list[WebSocket] = []
-        for connection in self.connections:
-            try:
-                await connection.send_text(message)
-            except Exception:
-                stale.append(connection)
-        for connection in stale:
-            self.disconnect(connection)
-
 
 manager = ConnectionManager()
 
@@ -66,15 +53,15 @@ async def health() -> dict[str, Any]:
         "environment_provider": getattr(environment_provider, "name", "UNAVAILABLE"),
         "model_status": runtime.get_status()["status"],
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "database": "not-configured",
     }
 
 
 @app.get("/api/system/gpu")
 async def system_gpu() -> dict[str, Any]:
+    gpu = detect_device()
     return {
-        "device": detect_device(),
-        "precision": configure_precision(detect_device()),
+        "device": gpu,
+        "precision": configure_precision(gpu),
         "gpu_info": get_gpu_info(),
         "gpu_memory": get_gpu_memory(),
         "gpu_utilization": get_gpu_utilization(),
@@ -90,13 +77,6 @@ async def model_status() -> dict[str, Any]:
 async def detection_image(file: UploadFile = File(...)) -> dict[str, Any]:
     if not settings.model_weights:
         raise HTTPException(status_code=503, detail="Model weights are not configured. Detection is unavailable.")
-    suffix = Path(file.filename or "").suffix.lower()
-    allowed = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
-    if suffix not in allowed:
-        raise HTTPException(status_code=415, detail="Unsupported image extension.")
-    contents = await file.read()
-    if not contents:
-        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
     return {
         "status": "accepted",
         "file": file.filename,
@@ -143,13 +123,8 @@ async def fire_detail(fire_id: str) -> dict[str, Any]:
 
 
 @app.get("/api/environment/current")
-async def environment_current(
-    latitude: float | None = None,
-    longitude: float | None = None,
-) -> dict[str, Any]:
-    result = await environment_provider.current(latitude, longitude)
-    await manager.broadcast({"type": "environment_update", "payload": result})
-    return result
+async def environment_current(latitude: float | None = None, longitude: float | None = None) -> dict[str, Any]:
+    return await environment_provider.current(latitude, longitude)
 
 
 @app.get("/api/environment/history")

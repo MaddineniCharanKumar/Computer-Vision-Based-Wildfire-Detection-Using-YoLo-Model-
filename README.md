@@ -1,49 +1,82 @@
 # EcoSpread-YOLO
 
-EcoSpread-YOLO is a research prototype for real-time UAV wildfire detection and predictive wildfire intelligence. The project focuses on a lightweight YOLO-based detector, environmental fusion, and short-horizon spread forecasting rather than reactive-only fire localization.
+EcoSpread-YOLO is a research prototype for real-time UAV wildfire detection and predictive wildfire intelligence. It combines a lightweight YOLO-based detector, environmental telemetry, geospatial context, and short-horizon spread forecasting in a modular backend architecture.
 
-## Goals
+## Mission
 
-- Detect fire and smoke in UAV imagery using a configurable YOLO-family model.
-- Fuse detections with UAV telemetry, weather, terrain, vegetation, and satellite context.
-- Produce short-horizon spread forecasts with explicit uncertainty.
-- Expose system state through a modular API and live dashboard.
-- Keep every claim tied to real measurements and actual evaluations.
+Move from reactive visual fire detection toward predictive wildfire intelligence by integrating:
+- YOLO fire/smoke detection
+- UAV geolocation and telemetry
+- live or recent environmental data
+- satellite corroboration
+- terrain and vegetation context
+- risk scoring and alerting
+- short-horizon spread forecasts
 
-## Core project rules
+## Core requirements enforced by this project
 
-- No fabricated detections, GPS coordinates, weather values, satellite observations, or evaluation metrics.
-- Keep DEMO_MODE explicit and clearly labeled when simulation is intentionally enabled.
-- Treat environmental data freshness as a first-class signal: LIVE, RECENT, STALE, or UNAVAILABLE.
-- Require real model weights and real data before reporting model performance.
-- Keep research and production code separated so experimental modules can be enabled or disabled.
+- No fabricated detections, fire events, GPS, weather values, or evaluation metrics.
+- Demo-mode must be explicit and clearly labeled.
+- Environmental data must preserve freshness metadata and source information.
+- If a provider is missing, the system must report UNAVAILABLE instead of inventing data.
+- All model and evaluation claims must be based on actual runs, not placeholders.
+- The code must remain modular and testable.
 
-## Relevant repository structure
+## Repository structure
 
-- `fireguard/` — Python backend and service layer.
-- `training/` — training, validation, and export scripts.
-- `scripts/` — dataset validation and preparation utilities.
-- `dashboard/` — optional dashboard frontend.
-- `docs/` — setup and architecture documentation.
-- `tests/` — backend and API tests.
+- `fireguard/` — backend, configuration, runtime, and service logic
+- `training/` — dataset validation, training, evaluation, and export scripts
+- `scripts/` — dataset preparation and inspection helpers
+- `dashboard/` — frontend for map, alert, risk, and telemetry visualization
+- `docs/` — architecture and operational notes
+- `tests/` — unit and API tests
 
-## Operational constraints
+## Local development
 
-- Prefer real providers over hard-coded demo data.
-- Guard all external APIs with explicit failure handling and logging.
-- Keep configuration externalized in environment variables and `.env.example`.
-- Do not commit secrets or private credentials.
-- Do not present bounding-box area as exact physical fire area unless calibration supports it.
+1. Create a virtual environment
+2. Install dependencies
+3. Copy `.env.example` to `.env`
+4. Start the API
 
-## Minimum implementation standard
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install -e ".[ml,dev]"
+cp .env.example .env
+uvicorn fireguard.api:app --reload --host 0.0.0.0 --port 8000
+```
 
-The codebase should support:
-- a FastAPI backend with health/system/model endpoints;
-- environment and provider abstractions;
-- modular detection, risk, and alert services;
-- no fake data in default runtime responses;
-- structured logging and safe degradation when dependencies are unavailable.
+API docs:
+- http://localhost:8000/docs
 
-## Development expectation
+## Key endpoints
 
-When adding code, prefer the smallest coherent change that follows the architecture, keeps modules testable, and does not invent unavailable APIs or SDK methods.
+- GET `/api/health`
+- GET `/api/system/gpu`
+- GET `/api/model/status`
+- POST `/api/detection/image`
+- POST `/api/detection/video`
+- GET `/api/cameras`
+- POST `/api/camera/{id}/start`
+- POST `/api/camera/{id}/stop`
+- GET `/api/fires`
+- GET `/api/fires/{id}`
+- GET `/api/environment/current`
+- GET `/api/environment/history`
+- GET `/api/risk/{event_id}`
+- GET `/api/alerts`
+- POST `/api/alerts/{id}/acknowledge`
+- GET `/api/analytics/overview`
+- WebSocket `/ws/live`
+
+## Data and evaluation policy
+
+- Dataset inspection must happen before training or metric reporting.
+- No model metrics may be reported without real validation data and actual execution.
+- Do not parse bounding-box area as precise physical fire area unless calibration supports it.
+- Keep research modules isolated and configurable.
+
+## Deployment note
+
+The project supports GPU acceleration when available, but it must continue safely on CPU or with unavailable providers. It must degrade gracefully and clearly report missing resources instead of generating fake results.
