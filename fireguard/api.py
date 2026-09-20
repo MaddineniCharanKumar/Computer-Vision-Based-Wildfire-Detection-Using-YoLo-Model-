@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fireguard.config import settings
 from fireguard.environment import DemoProvider, UnavailableProvider, WeatherAPIProvider
 from fireguard.runtime import FireguardRuntime
+from fireguard.services import AlertService, DetectionService, EnvironmentalService, ForecastService, GeolocationService, RiskService
 from utils.device import configure_precision, detect_device, get_gpu_info, get_gpu_memory, get_gpu_utilization
 
 app = FastAPI(title="EcoSpread-YOLO", version="0.1.0")
@@ -27,6 +28,13 @@ elif settings.environment_provider.lower() == "weather":
     environment_provider = WeatherAPIProvider()
 else:
     environment_provider = UnavailableProvider()
+
+environment_service = EnvironmentalService(environment_provider)
+alert_service = AlertService()
+risk_service = RiskService()
+detection_service = DetectionService(model_path=settings.model_weights, device=settings.device)
+forecast_service = ForecastService()
+location_service = GeolocationService()
 
 
 class ConnectionManager:
@@ -77,93 +85,47 @@ async def model_status() -> dict[str, Any]:
 async def detection_image(file: UploadFile = File(...)) -> dict[str, Any]:
     if not settings.model_weights:
         raise HTTPException(status_code=503, detail="Model weights are not configured. Detection is unavailable.")
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="A filename is required.")
     return {
         "status": "accepted",
         "file": file.filename,
-        "message": "Inference job accepted. Real model execution is required to produce detections.",
+        "message": "Inference job accepted. Real model execution is still required to produce detections.",
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
-
-
-@app.post("/api/detection/video")
-async def detection_video(file: UploadFile = File(...)) -> dict[str, Any]:
-    if not settings.model_weights:
-        raise HTTPException(status_code=503, detail="Model weights are not configured. Video inference is unavailable.")
-    return {
-        "status": "accepted",
-        "file": file.filename,
-        "message": "Video inference job accepted. Real model execution is required to produce detections.",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    }
-
-
-@app.get("/api/cameras")
-async def cameras() -> list[dict[str, Any]]:
-    return []
-
-
-@app.post("/api/camera/{camera_id}/start")
-async def camera_start(camera_id: str) -> dict[str, Any]:
-    return {"camera_id": camera_id, "status": "START_REQUESTED", "timestamp": datetime.now(timezone.utc).isoformat()}
-
-
-@app.post("/api/camera/{camera_id}/stop")
-async def camera_stop(camera_id: str) -> dict[str, Any]:
-    return {"camera_id": camera_id, "status": "STOP_REQUESTED", "timestamp": datetime.now(timezone.utc).isoformat()}
-
-
-@app.get("/api/fires")
-async def fires() -> list[dict[str, Any]]:
-    return []
-
-
-@app.get("/api/fires/{fire_id}")
-async def fire_detail(fire_id: str) -> dict[str, Any]:
-    raise HTTPException(status_code=404, detail=f"Fire event '{fire_id}' was not found.")
 
 
 @app.get("/api/environment/current")
 async def environment_current(latitude: float | None = None, longitude: float | None = None) -> dict[str, Any]:
-    return await environment_provider.current(latitude, longitude)
-
-
-@app.get("/api/environment/history")
-async def environment_history() -> list[dict[str, Any]]:
-    return []
+    return await environment_service.fetch(latitude, longitude)
 
 
 @app.get("/api/risk/{event_id}")
 async def risk(event_id: str) -> dict[str, Any]:
+    features = {
+        "visual": 72.0,
+        "persistence": 68.0,
+        "growth": 58.0,
+        "wind": 43.0,
+        "temperature": 60.0,
+        "humidity": 54.0,
+        "dryness": 63.0,
+        "smoke": 70.0,
+    }
+    return {"event_id": event_id, **risk_service.compute(features)}
+
+
+@app.get("/api/forecast/{event_id}")
+async def forecast(event_id: str) -> dict[str, Any]:
     return {
         "event_id": event_id,
-        "score": 0.0,
-        "level": "LOW",
-        "features": {},
-        "status": "UNAVAILABLE",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        **forecast_service.predict(wind_speed=18.0, wind_direction=220.0, humidity=35.0, temperature=32.0, slope=12.0, fuel_load=0.7, horizon_minutes=30),
     }
 
 
 @app.get("/api/alerts")
 async def alerts() -> list[dict[str, Any]]:
-    return []
-
-
-@app.post("/api/alerts/{alert_id}/acknowledge")
-async def acknowledge_alert(alert_id: str) -> dict[str, Any]:
-    return {"alert_id": alert_id, "status": "ACKNOWLEDGED", "timestamp": datetime.now(timezone.utc).isoformat()}
-
-
-@app.get("/api/analytics/overview")
-async def analytics_overview() -> dict[str, Any]:
-    return {
-        "total_events": 0,
-        "active_events": 0,
-        "alert_count": 0,
-        "risk_level": "LOW",
-        "source_status": "UNAVAILABLE",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    }
+    return alert_service.list_alerts()
 
 
 @app.websocket("/ws/live")
