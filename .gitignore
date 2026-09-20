@@ -1,19 +1,35 @@
-# Local data and generated artifacts
-
-data/raw/
-data/processed/
-data/train/
-data/val/
-data/test/
-datasets/
-runs/
-models/
+# FASDD and generated artifacts
+/data/raw/
+/data/processed/
+/data/train/
+/data/val/
+/data/test/
+/reports/*.json
+/reports/*.html
+/reports/false_positive_gallery/
+/reports/false_negative_gallery/
+/models/
+/runs/
 *.pt
 *.onnx
 *.engine
-*.zip
-*.7z
-*.rar
-*.tar
-*.tar.gz
+*.db
+*.sqlite
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
 .env
+.pytest_cache/
+.ruff_cache/
+
+# Frontend
+node_modules/
+dashboard/dist/
+
+# Local/editor files
+.vscode/
+.idea/
+*.log
+*.tmp
