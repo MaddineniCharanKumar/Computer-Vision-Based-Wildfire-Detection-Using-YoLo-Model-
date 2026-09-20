@@ -1,3 +1,39 @@
-# Dashboard
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
 
-A React/Vite dashboard should consume `/ws/live` and render Overview, Live Detection, Fire Events, Risk Monitoring, Environmental Monitoring, Alerts, Historical Analytics, Model Performance, Dataset Analytics, GPU Monitoring and Settings. Keep real and demo badges visually distinct. A frontend package can be added independently without coupling the inference service.
+[project]
+name = "eco-spread-yolo"
+version = "0.1.0"
+description = "UAV wildfire detection, environmental fusion, and spread forecasting platform"
+requires-python = ">=3.10"
+dependencies = [
+  "fastapi>=0.110",
+  "uvicorn[standard]>=0.27",
+  "pydantic-settings>=2.2",
+  "python-multipart>=0.0.9",
+  "numpy>=1.26",
+  "Pillow>=10.0",
+  "PyYAML>=6.0",
+  "sqlmodel>=0.0.22",
+  "python-dotenv>=1.0.1",
+]
+
+[project.optional-dependencies]
+ml = [
+  "ultralytics>=8.3",
+  "torch>=2.2",
+  "opencv-python>=4.9",
+]
+dev = [
+  "pytest>=8",
+  "httpx>=0.27",
+  "ruff>=0.5",
+]
+
+[tool.setuptools.packages.find]
+include = ["fireguard*", "training*", "utils*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+

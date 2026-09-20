@@ -1,107 +1,40 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class EnvironmentalProvider:
-    """Provider interface for live environmental measurements."""
+class Settings(BaseSettings):
+    """Runtime configuration for the wildfire monitoring platform."""
 
-    name = "UNAVAILABLE"
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_prefix="FIREGUARD_",
+        extra="ignore",
+    )
 
-    async def current(
-        self, latitude: float | None = None, longitude: float | None = None
-    ) -> dict[str, Any]:
-        raise NotImplementedError
-
-
-class DemoProvider(EnvironmentalProvider):
-    name = "DEMO DATA"
-
-    async def current(
-        self, latitude: float | None = None, longitude: float | None = None
-    ) -> dict[str, Any]:
-        return {
-            "temperature": 32.5,
-            "humidity": 31.0,
-            "wind_speed": 24.0,
-            "wind_direction": 210.0,
-            "rainfall": 0.0,
-            "pressure": 1012.0,
-            "pm25": 18.5,
-            "pm10": 25.0,
-            "visibility": 8.5,
-            "source": self.name,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "demo": True,
-            "freshness": "LIVE",
-            "location_available": latitude is not None and longitude is not None,
-        }
-
-
-class UnavailableProvider(EnvironmentalProvider):
-    """Safe default: never invents live measurements."""
-
-    name = "UNAVAILABLE"
-
-    async def current(
-        self, latitude: float | None = None, longitude: float | None = None
-    ) -> dict[str, Any]:
-        return {
-            "temperature": None,
-            "humidity": None,
-            "wind_speed": None,
-            "wind_direction": None,
-            "rainfall": None,
-            "pressure": None,
-            "pm25": None,
-            "pm10": None,
-            "visibility": None,
-            "source": self.name,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "demo": False,
-            "freshness": "UNAVAILABLE",
-            "message": "No environmental provider is configured.",
-            "location_available": latitude is not None and longitude is not None,
-        }
+    demo_mode: bool = False
+    database_url: str = "sqlite:///./fireguard.db"
+    model_weights: str | None = None
+    device: str = "cpu"
+    dataset_path: str = ""
+    cors_origins: str = "http://localhost:5173"
+    confidence_threshold: float = 0.35
+    temporal_window: int = 12
+    minimum_persistence: int = 3
+    camera_frame_skip: int = 0
+    environment_provider: str = "unavailable"
+    weather_api_url: str | None = None
+    weather_api_key: str | None = None
+    environment_max_age_seconds: int = 300
+    alert_cooldown_seconds: int = 60
+    upload_max_mb: int = 100
+    camera_url: str | None = None
+    camera_id: str = "default-camera"
+    satellite_provider: str = "none"
+    terrain_provider: str = "none"
+    vegetation_provider: str = "none"
+    alert_threshold: float = 0.6
+    forecast_horizons: str = "30,60"
 
 
-class WeatherAPIProvider(UnavailableProvider):
-    """Adapter boundary for a real weather service.
-
-    A provider URL and credential must be configured before an HTTP client is
-    added. Until then this intentionally returns UNAVAILABLE instead of fake
-    weather values.
-    """
-
-    name = "WEATHER API UNAVAILABLE"
-
-
-class SensorProvider(UnavailableProvider):
-    name = "SENSOR UNAVAILABLE"
-
-
-class IoTSensorProvider(UnavailableProvider):
-    name = "IOT SENSOR UNAVAILABLE"
-
-
-class AirQualityProvider(UnavailableProvider):
-    name = "AIR QUALITY UNAVAILABLE"
-
-
-class CSVProvider(EnvironmentalProvider):
-    def __init__(self, path: str):
-        self.path = Path(path)
-
-    async def current(
-        self, latitude: float | None = None, longitude: float | None = None
-    ) -> dict[str, Any]:
-        if not self.path.exists():
-            return await UnavailableProvider().current(latitude, longitude)
-        # CSV ingestion belongs in the ingestion worker; do not guess a row or
-        # silently treat stale data as current.
-        return {
-            **await UnavailableProvider().current(latitude, longitude),
-            "source": "CSV DATA AVAILABLE - INGESTION REQUIRED",
-        }
+settings = Settings()

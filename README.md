@@ -1,76 +1,49 @@
-# FIREGUARD AI
+# EcoSpread-YOLO
 
-FIREGUARD AI is a research-oriented wildfire intelligence platform. It separates **FASDD model training data** from live monitoring sources and never treats demo values as real measurements.
+EcoSpread-YOLO is a research prototype for real-time UAV wildfire detection and predictive wildfire intelligence. The project focuses on a lightweight YOLO-based detector, environmental fusion, and short-horizon spread forecasting rather than reactive-only fire localization.
 
-## Dataset
+## Goals
 
-FASDD source: https://www.scidb.cn/en/file?fid=9456106d26c5fc6b74143c3707115d39&mode=front
+- Detect fire and smoke in UAV imagery using a configurable YOLO-family model.
+- Fuse detections with UAV telemetry, weather, terrain, vegetation, and satellite context.
+- Produce short-horizon spread forecasts with explicit uncertainty.
+- Expose system state through a modular API and live dashboard.
+- Keep every claim tied to real measurements and actual evaluations.
 
-The local dataset is intentionally not committed. Inspect the actual files before preprocessing or training:
+## Core project rules
 
-```powershell
-python scripts\inspect_dataset.py --dataset "C:\Users\dines\Downloads\FASDD_UAV" --output reports
-```
+- No fabricated detections, GPS coordinates, weather values, satellite observations, or evaluation metrics.
+- Keep DEMO_MODE explicit and clearly labeled when simulation is intentionally enabled.
+- Treat environmental data freshness as a first-class signal: LIVE, RECENT, STALE, or UNAVAILABLE.
+- Require real model weights and real data before reporting model performance.
+- Keep research and production code separated so experimental modules can be enabled or disabled.
 
-The command creates `reports/dataset_report.json` and `reports/dataset_report.html`. Counts, classes and annotation quality are only valid after running it against the downloaded dataset.
+## Relevant repository structure
 
-## Backend setup
+- `fireguard/` — Python backend and service layer.
+- `training/` — training, validation, and export scripts.
+- `scripts/` — dataset validation and preparation utilities.
+- `dashboard/` — optional dashboard frontend.
+- `docs/` — setup and architecture documentation.
+- `tests/` — backend and API tests.
 
-```powershell
-py -3.11 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-pip install -e ".[ml,dev]"
-Copy-Item .env.example .env
-uvicorn fireguard.api:app --reload --host 0.0.0.0 --port 8000
-```
+## Operational constraints
 
-API documentation: http://localhost:8000/docs
+- Prefer real providers over hard-coded demo data.
+- Guard all external APIs with explicit failure handling and logging.
+- Keep configuration externalized in environment variables and `.env.example`.
+- Do not commit secrets or private credentials.
+- Do not present bounding-box area as exact physical fire area unless calibration supports it.
 
-Useful endpoints:
+## Minimum implementation standard
 
-```text
-GET /api/health
-GET /api/system/gpu
-GET /api/dataset/statistics
-GET /api/model/status
-GET /api/environment/current
-GET /api/fires
-GET /api/alerts
-GET /api/cameras
-WebSocket /ws/live
-```
+The codebase should support:
+- a FastAPI backend with health/system/model endpoints;
+- environment and provider abstractions;
+- modular detection, risk, and alert services;
+- no fake data in default runtime responses;
+- structured logging and safe degradation when dependencies are unavailable.
 
-The default non-demo environment provider returns `UNAVAILABLE` until a real provider is configured. It does not fabricate weather or sensor readings. Set `FIREGUARD_DEMO_MODE=true` only for clearly labelled local demonstrations.
+## Development expectation
 
-## Dataset preparation and training
-
-```powershell
-python scripts\prepare_dataset.py --source "C:\Users\dines\Downloads\FASDD_UAV" --output data\processed
-python training\train.py --data data\processed --weights yolo11n.pt --epochs 50 --batch 16 --device 0
-python training\evaluate.py --weights runs\train\train\weights\best.pt --data data\processed\dataset.yaml --split val --device 0
-```
-
-Use `--device cpu` when CUDA is unavailable. Do not report metrics until the real evaluation command has completed.
-
-## Dashboard
-
-```powershell
-cd dashboard
-npm install
-npm run dev
-```
-
-Open http://localhost:5173. The frontend must display unavailable/demo states from the API rather than inventing live detections.
-
-## Docker
-
-```powershell
-docker compose up --build
-```
-
-The current Compose setup is suitable for local development. Production deployment still requires PostgreSQL, migrations, authentication, a live camera worker, provider credentials and a GPU-enabled runtime where applicable.
-
-## Scientific limitations
-
-The model detects visual fire/smoke patterns. Bounding-box size is a **Visual Fire Area Proxy**, spread is an apparent visual estimate, and the configurable risk score is decision support—not a physically validated wildfire propagation model. Never claim exact physical area, temperature, propagation speed, GPS, weather, accuracy or FPS unless measured from real data.
+When adding code, prefer the smallest coherent change that follows the architecture, keeps modules testable, and does not invent unavailable APIs or SDK methods.

@@ -1,23 +1,16 @@
-# FIREGUARD AI
+# Dashboard
 
-This repo contains a production-oriented wildfire detection and risk platform foundation. The design follows a modular architecture with dynamic dataset discovery, YOLO model adaptation, temporal verification, event tracking, and risk-aware early warning.
+The dashboard should consume the live API and websocket outputs to visualize detection, environment, risk, alerts, and forecast data without inventing measurement values.
 
-## Key modules
+## Dashboard responsibilities
 
-- `scripts/inspect_dataset.py`: dataset inspection and report generation
-- `scripts/prepare_dataset.py`: dynamic dataset splitting
-- `training/`: train, validate, evaluate, export, hyperparameters
-- `fireguard/api.py`: FastAPI service
-- `fireguard/analytics.py`: summaries and historical analytics
-- `fireguard/alerts.py`: early warning and rule evaluation
-- `fireguard/environment.py`: environmental provider abstraction
-- `fireguard/risk.py`: risk scoring
-- `fireguard/tracking.py`: tracking state and velocity tracking
-- `utils/device.py`: hardware detection and precision configuration
+- show system health and provider state;
+- show live or recent detection results;
+- display environmental readings with freshness labels;
+- render risk and alert history;
+- display map context and short-term forecast overlays;
+- clearly indicate unavailable or stale data states.
 
-## Important scientific limitations
+## Data policy
 
-- visual area proxy is not true fire size
-- estimated direction is not propagation velocity
-- environmental risk is not future certainty
-- only real metrics are accepted
+The frontend must never silently replace missing or stale live data with demo values. Any display of demo mode should be explicitly labeled in the UI.
