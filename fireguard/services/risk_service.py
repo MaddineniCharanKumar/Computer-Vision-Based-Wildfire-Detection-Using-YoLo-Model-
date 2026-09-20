@@ -1,46 +1,35 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from typing import Any
 
 
-@dataclass
 class RiskService:
-    weights: dict[str, float] = field(
-        default_factory=lambda: {
-            "visual": 0.25,
-            "persistence": 0.15,
-            "growth": 0.15,
-            "wind": 0.10,
-            "temperature": 0.10,
-            "humidity": 0.10,
-            "dryness": 0.10,
-            "smoke": 0.05,
-        }
-    )
+    def __init__(self):
+        pass
 
-    def compute(self, features: dict[str, Any]) -> dict[str, Any]:
-        score = 0.0
-        for key, weight in self.weights.items():
-            value = float(features.get(key, 0.0))
-            score += min(max(value, 0.0), 100.0) * weight
-        score = min(100.0, max(0.0, score))
+    def score_risk(self, confidence: float, wind_speed: float | None, humidity: float | None, growth_rate: float) -> dict[str, Any]:
+        score = confidence * 60
+        score += (wind_speed or 0) * 0.8
+        score += max(0, (50 - (humidity or 0)) * 0.6)
+        score += max(0, growth_rate * 10)
+
+        if score >= 85:
+            level = "CRITICAL"
+        elif score >= 70:
+            level = "HIGH"
+        elif score >= 50:
+            level = "MEDIUM"
+        else:
+            level = "LOW"
+
         return {
-            "score": round(score, 2),
-            "level": self.level(score),
-            "features": features,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "risk_score": round(score, 2),
+            "level": level,
+            "explanation": {
+                "fire_confidence": confidence,
+                "wind_speed": wind_speed,
+                "humidity": humidity,
+                "growth_rate": growth_rate,
+                "score": round(score, 2),
+            },
         }
-
-    @staticmethod
-    def level(score: float) -> str:
-        if score < 20:
-            return "LOW"
-        if score < 40:
-            return "GUARDED"
-        if score < 60:
-            return "MODERATE"
-        if score < 80:
-            return "HIGH"
-        return "CRITICAL"

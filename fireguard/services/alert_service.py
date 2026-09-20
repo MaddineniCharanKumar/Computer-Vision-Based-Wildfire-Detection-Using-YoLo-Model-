@@ -1,29 +1,29 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any
+from datetime import datetime
+from uuid import uuid4
+
+from sqlmodel import Session
+
+from fireguard.models import Alert
 
 
-@dataclass
 class AlertService:
-    alerts: list[dict[str, Any]] = field(default_factory=list)
+    def __init__(self, session: Session):
+        self.session = session
 
-    def push(self, event_id: str, level: int, title: str, message: str, dedup_key: str | None = None) -> dict[str, Any]:
-        dedup = dedup_key or f"{event_id}:{level}:{title}"
-        if any(item.get("dedup_key") == dedup for item in self.alerts):
-            return {"status": "deduplicated", "dedup_key": dedup}
-        alert = {
-            "event_id": event_id,
-            "level": level,
-            "title": title,
-            "message": message,
-            "dedup_key": dedup,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "acknowledged": False,
-        }
-        self.alerts.append(alert)
+    def create_alert(self, event_id: str, title: str, message: str, level: str = "MEDIUM", reason: str = "") -> Alert:
+        alert = Alert(
+            alert_id=f"alert-{uuid4().hex[:10]}",
+            event_id=event_id,
+            level=level,
+            title=title,
+            message=message,
+            reason=reason,
+            acknowledged=False,
+            created_at=datetime.utcnow(),
+        )
+        self.session.add(alert)
+        self.session.commit()
+        self.session.refresh(alert)
         return alert
-
-    def list_alerts(self) -> list[dict[str, Any]]:
-        return self.alerts
