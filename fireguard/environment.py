@@ -96,9 +96,28 @@ class SensorProvider(UnavailableProvider):
     name = "SENSOR_PROVIDER"
 
 
+class CSVProvider(UnavailableProvider):
+    """Backward-compatible alias for CSV-backed or static file data providers."""
+
+    name = "CSV_PROVIDER"
+
+
 class IoTSensorProvider(UnavailableProvider):
     name = "IOT_SENSOR_PROVIDER"
 
 
 class AirQualityProvider(UnavailableProvider):
     name = "AIR_QUALITY_PROVIDER"
+
+
+__all__ = [
+    "EnvironmentalProvider",
+    "DataStatus",
+    "UnavailableProvider",
+    "DemoProvider",
+    "WeatherAPIProvider",
+    "SensorProvider",
+    "CSVProvider",
+    "IoTSensorProvider",
+    "AirQualityProvider",
+]
