@@ -6,11 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """Runtime configuration for the wildfire monitoring platform."""
 
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_prefix="FIREGUARD_",
-        extra="ignore",
-    )
+    model_config = SettingsConfigDict(env_file=".env", env_prefix="FIREGUARD_", extra="ignore")
 
     demo_mode: bool = False
     database_url: str = "sqlite:///./fireguard.db"
@@ -23,9 +19,10 @@ class Settings(BaseSettings):
     minimum_persistence: int = 3
     camera_frame_skip: int = 0
     environment_provider: str = "unavailable"
-    weather_api_url: str | None = None
+    weather_api_url: str = "https://api.open-meteo.com/v1/forecast"
     weather_api_key: str | None = None
     environment_max_age_seconds: int = 300
+    environment_timeout_seconds: float = 10.0
     alert_cooldown_seconds: int = 60
     upload_max_mb: int = 100
     camera_url: str | None = None

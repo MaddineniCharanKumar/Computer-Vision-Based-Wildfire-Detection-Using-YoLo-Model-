@@ -9,8 +9,6 @@ from fireguard.environment import UnavailableProvider
 
 @dataclass
 class EnvironmentalObservation:
-    """Normalized environmental observation with explicit freshness metadata."""
-
     timestamp: str
     source: str = "UNAVAILABLE"
     location: dict[str, float] | None = None
@@ -27,52 +25,47 @@ class EnvironmentalObservation:
     status: str = "UNAVAILABLE"
     demo: bool = False
     message: str | None = None
+    units: dict[str, str] | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "timestamp": self.timestamp,
-            "source": self.source,
-            "location": self.location,
-            "temperature": self.temperature,
-            "humidity": self.humidity,
-            "wind_speed": self.wind_speed,
-            "wind_direction": self.wind_direction,
-            "rainfall": self.rainfall,
-            "pressure": self.pressure,
-            "pm25": self.pm25,
-            "pm10": self.pm10,
-            "visibility": self.visibility,
-            "freshness": self.freshness,
-            "status": self.status,
-            "demo": self.demo,
-            "message": self.message,
-        }
+        return self.__dict__.copy()
 
 
 class EnvironmentalService:
-    """Normalize data from real or demo providers while preserving uncertainty metadata."""
+    """Normalize provider responses and classify observation freshness."""
 
-    def __init__(self, provider: Any | None = None):
+    def __init__(self, provider: Any | None = None, max_age_seconds: int = 300):
         self.provider = provider or UnavailableProvider()
+        self.max_age_seconds = max_age_seconds
+
+    def _freshness(self, timestamp: str, current: str) -> str:
+        if current in {"UNAVAILABLE", "DEMO_MODE"}:
+            return "UNAVAILABLE" if current == "UNAVAILABLE" else "LIVE"
+        try:
+            observed = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+            age = (datetime.now(timezone.utc) - observed.astimezone(timezone.utc)).total_seconds()
+            if age <= 60:
+                return "LIVE"
+            if age <= self.max_age_seconds:
+                return "RECENT"
+            return "STALE"
+        except (TypeError, ValueError):
+            return "UNAVAILABLE"
 
     async def fetch(self, latitude: float | None = None, longitude: float | None = None) -> dict[str, Any]:
         payload = await self.provider.current(latitude, longitude)
-        observation = EnvironmentalObservation(
-            timestamp=payload.get("timestamp", datetime.now(timezone.utc).isoformat()),
+        timestamp = payload.get("timestamp", datetime.now(timezone.utc).isoformat())
+        status = payload.get("status", "UNAVAILABLE")
+        payload["freshness"] = self._freshness(timestamp, status)
+        payload["location"] = {"latitude": latitude, "longitude": longitude} if latitude is not None and longitude is not None else None
+        return EnvironmentalObservation(
+            timestamp=timestamp,
             source=payload.get("source", "UNAVAILABLE"),
-            location={"latitude": latitude, "longitude": longitude} if latitude is not None and longitude is not None else None,
-            temperature=payload.get("temperature"),
-            humidity=payload.get("humidity"),
-            wind_speed=payload.get("wind_speed"),
-            wind_direction=payload.get("wind_direction"),
-            rainfall=payload.get("rainfall"),
-            pressure=payload.get("pressure"),
-            pm25=payload.get("pm25"),
-            pm10=payload.get("pm10"),
-            visibility=payload.get("visibility"),
-            freshness=payload.get("freshness", "UNAVAILABLE"),
-            status=payload.get("status", "UNAVAILABLE"),
-            demo=bool(payload.get("demo", False)),
-            message=payload.get("message"),
-        )
-        return observation.to_dict()
+            location=payload["location"],
+            temperature=payload.get("temperature"), humidity=payload.get("humidity"),
+            wind_speed=payload.get("wind_speed"), wind_direction=payload.get("wind_direction"),
+            rainfall=payload.get("rainfall"), pressure=payload.get("pressure"),
+            pm25=payload.get("pm25"), pm10=payload.get("pm10"), visibility=payload.get("visibility"),
+            freshness=payload["freshness"], status=status, demo=bool(payload.get("demo", False)),
+            message=payload.get("message"), units=payload.get("units"),
+        ).to_dict()
