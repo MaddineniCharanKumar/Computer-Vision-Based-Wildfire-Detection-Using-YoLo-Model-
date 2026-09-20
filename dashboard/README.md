@@ -1,39 +1,16 @@
-[build-system]
-requires = ["setuptools>=68"]
-build-backend = "setuptools.build_meta"
+# Dashboard
 
-[project]
-name = "eco-spread-yolo"
-version = "0.1.0"
-description = "UAV wildfire detection, environmental fusion, and spread forecasting platform"
-requires-python = ">=3.10"
-dependencies = [
-  "fastapi>=0.110",
-  "uvicorn[standard]>=0.27",
-  "pydantic-settings>=2.2",
-  "python-multipart>=0.0.9",
-  "numpy>=1.26",
-  "Pillow>=10.0",
-  "PyYAML>=6.0",
-  "sqlmodel>=0.0.22",
-  "python-dotenv>=1.0.1",
-]
+The dashboard should consume the live API and websocket outputs to visualize detection, environment, risk, alerts, and forecast data without inventing measurement values.
 
-[project.optional-dependencies]
-ml = [
-  "ultralytics>=8.3",
-  "torch>=2.2",
-  "opencv-python>=4.9",
-]
-dev = [
-  "pytest>=8",
-  "httpx>=0.27",
-  "ruff>=0.5",
-]
+## Dashboard responsibilities
 
-[tool.setuptools.packages.find]
-include = ["fireguard*", "training*", "utils*"]
+- show system health and provider state;
+- show live or recent detection results;
+- display environmental readings with freshness labels;
+- render risk and alert history;
+- display map context and short-term forecast overlays;
+- clearly indicate unavailable or stale data states.
 
-[tool.pytest.ini_options]
-pythonpath = ["."]
+## Data policy
 
+The frontend must never silently replace missing or stale live data with demo values. Any display of demo mode should be explicitly labeled in the UI.

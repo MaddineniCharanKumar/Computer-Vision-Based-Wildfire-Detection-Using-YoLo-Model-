@@ -1,40 +1,104 @@
 from __future__ import annotations
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Any
 
 
-class Settings(BaseSettings):
-    """Runtime configuration for the wildfire monitoring platform."""
+class EnvironmentalProvider:
+    """Provider interface for environmental measurements."""
 
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_prefix="FIREGUARD_",
-        extra="ignore",
-    )
+    name = "UNAVAILABLE"
 
-    demo_mode: bool = False
-    database_url: str = "sqlite:///./fireguard.db"
-    model_weights: str | None = None
-    device: str = "cpu"
-    dataset_path: str = ""
-    cors_origins: str = "http://localhost:5173"
-    confidence_threshold: float = 0.35
-    temporal_window: int = 12
-    minimum_persistence: int = 3
-    camera_frame_skip: int = 0
-    environment_provider: str = "unavailable"
-    weather_api_url: str | None = None
-    weather_api_key: str | None = None
-    environment_max_age_seconds: int = 300
-    alert_cooldown_seconds: int = 60
-    upload_max_mb: int = 100
-    camera_url: str | None = None
-    camera_id: str = "default-camera"
-    satellite_provider: str = "none"
-    terrain_provider: str = "none"
-    vegetation_provider: str = "none"
-    alert_threshold: float = 0.6
-    forecast_horizons: str = "30,60"
+    async def current(
+        self,
+        latitude: float | None = None,
+        longitude: float | None = None,
+    ) -> dict[str, Any]:
+        raise NotImplementedError
 
 
-settings = Settings()
+@dataclass
+class DataStatus:
+    status: str = "UNAVAILABLE"
+    freshness: str = "UNAVAILABLE"
+    source: str = "UNAVAILABLE"
+    demo: bool = False
+
+
+class UnavailableProvider(EnvironmentalProvider):
+    """Safe default that never fabricates live measurements."""
+
+    name = "UNAVAILABLE"
+
+    async def current(
+        self,
+        latitude: float | None = None,
+        longitude: float | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "temperature": None,
+            "humidity": None,
+            "wind_speed": None,
+            "wind_direction": None,
+            "rainfall": None,
+            "pressure": None,
+            "pm25": None,
+            "pm10": None,
+            "visibility": None,
+            "source": self.name,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "demo": False,
+            "freshness": "UNAVAILABLE",
+            "status": "UNAVAILABLE",
+            "message": "No environmental provider is configured.",
+            "location_available": latitude is not None and longitude is not None,
+        }
+
+
+class DemoProvider(EnvironmentalProvider):
+    """Explicit demo data source that is clearly labeled and never mixed with live data."""
+
+    name = "DEMO"
+
+    async def current(
+        self,
+        latitude: float | None = None,
+        longitude: float | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "temperature": 32.5,
+            "humidity": 31.0,
+            "wind_speed": 24.0,
+            "wind_direction": 210.0,
+            "rainfall": 0.0,
+            "pressure": 1012.0,
+            "pm25": 18.5,
+            "pm10": 25.0,
+            "visibility": 8.5,
+            "source": self.name,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "demo": True,
+            "freshness": "LIVE",
+            "status": "DEMO_MODE",
+            "message": "Demo data is active. This is not live monitoring data.",
+            "location_available": latitude is not None and longitude is not None,
+        }
+
+
+class WeatherAPIProvider(UnavailableProvider):
+    """Adapter boundary for a real weather service."""
+
+    name = "WEATHER_API"
+
+
+class SensorProvider(UnavailableProvider):
+    name = "SENSOR_PROVIDER"
+
+
+class IoTSensorProvider(UnavailableProvider):
+    name = "IOT_SENSOR_PROVIDER"
+
+
+class AirQualityProvider(UnavailableProvider):
+    name = "AIR_QUALITY_PROVIDER"

@@ -6,41 +6,24 @@ from typing import Any
 
 
 @dataclass
-class RiskService:
-    weights: dict[str, float] = field(
-        default_factory=lambda: {
-            "visual": 0.25,
-            "persistence": 0.15,
-            "growth": 0.15,
-            "wind": 0.10,
-            "temperature": 0.10,
-            "humidity": 0.10,
-            "dryness": 0.10,
-            "smoke": 0.05,
-        }
-    )
+class AlertService:
+    alerts: list[dict[str, Any]] = field(default_factory=list)
 
-    def compute(self, features: dict[str, Any]) -> dict[str, Any]:
-        score = 0.0
-        for key, weight in self.weights.items():
-            value = float(features.get(key, 0.0))
-            score += min(max(value, 0.0), 100.0) * weight
-        score = min(100.0, max(0.0, score))
-        return {
-            "score": round(score, 2),
-            "level": self.level(score),
-            "features": features,
+    def push(self, event_id: str, level: int, title: str, message: str, dedup_key: str | None = None) -> dict[str, Any]:
+        dedup = dedup_key or f"{event_id}:{level}:{title}"
+        if any(item.get("dedup_key") == dedup for item in self.alerts):
+            return {"status": "deduplicated", "dedup_key": dedup}
+        alert = {
+            "event_id": event_id,
+            "level": level,
+            "title": title,
+            "message": message,
+            "dedup_key": dedup,
             "timestamp": datetime.now(timezone.utc).isoformat(),
+            "acknowledged": False,
         }
+        self.alerts.append(alert)
+        return alert
 
-    @staticmethod
-    def level(score: float) -> str:
-        if score < 20:
-            return "LOW"
-        if score < 40:
-            return "GUARDED"
-        if score < 60:
-            return "MODERATE"
-        if score < 80:
-            return "HIGH"
-        return "CRITICAL"
+    def list_alerts(self) -> list[dict[str, Any]]:
+        return self.alerts

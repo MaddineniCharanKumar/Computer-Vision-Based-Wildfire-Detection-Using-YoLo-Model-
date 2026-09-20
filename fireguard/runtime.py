@@ -1,104 +1,37 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+import json
 from datetime import datetime, timezone
 from typing import Any
 
 
-class EnvironmentalProvider:
-    """Provider interface for environment measurements."""
+class FireguardRuntime:
+    def __init__(self, model_path: str | None = None, device: str = "cpu"):
+        self.model_path = model_path
+        self.device = device
 
-    name = "UNAVAILABLE"
-
-    async def current(
-        self,
-        latitude: float | None = None,
-        longitude: float | None = None,
-    ) -> dict[str, Any]:
-        raise NotImplementedError
-
-
-@dataclass
-class DataStatus:
-    status: str = "UNAVAILABLE"
-    freshness: str = "UNAVAILABLE"
-    source: str = "UNAVAILABLE"
-    demo: bool = False
-
-
-class UnavailableProvider(EnvironmentalProvider):
-    """Safe default that never fabricates live measurements."""
-
-    name = "UNAVAILABLE"
-
-    async def current(
-        self,
-        latitude: float | None = None,
-        longitude: float | None = None,
-    ) -> dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         return {
-            "temperature": None,
-            "humidity": None,
-            "wind_speed": None,
-            "wind_direction": None,
-            "rainfall": None,
-            "pressure": None,
-            "pm25": None,
-            "pm10": None,
-            "visibility": None,
-            "source": self.name,
+            "model_path": self.model_path,
+            "device": self.device,
+            "status": "READY" if self.model_path else "UNAVAILABLE",
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "demo": False,
-            "freshness": "UNAVAILABLE",
-            "status": "UNAVAILABLE",
-            "message": "No environmental provider is configured.",
-            "location_available": latitude is not None and longitude is not None,
+            "note": "Model weights are required before inference can run.",
         }
 
 
-class DemoProvider(EnvironmentalProvider):
-    """Explicit demo data source that is clearly labeled and never mixed with live data."""
+class ModelRuntime:
+    def __init__(self, weights_path: str | None = None):
+        self.weights_path = weights_path
 
-    name = "DEMO"
-
-    async def current(
-        self,
-        latitude: float | None = None,
-        longitude: float | None = None,
-    ) -> dict[str, Any]:
+    def status(self) -> dict[str, Any]:
         return {
-            "temperature": 32.5,
-            "humidity": 31.0,
-            "wind_speed": 24.0,
-            "wind_direction": 210.0,
-            "rainfall": 0.0,
-            "pressure": 1012.0,
-            "pm25": 18.5,
-            "pm10": 25.0,
-            "visibility": 8.5,
-            "source": self.name,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "demo": True,
-            "freshness": "LIVE",
-            "status": "DEMO_MODE",
-            "message": "Demo data is active. This is not live monitoring data.",
-            "location_available": latitude is not None and longitude is not None,
+            "weights_path": self.weights_path,
+            "ready": bool(self.weights_path),
+            "note": "Real YOLO weights are required before production inference.",
         }
 
 
-class WeatherAPIProvider(UnavailableProvider):
-    """Adapter boundary for a real weather service."""
-
-    name = "WEATHER_API"
-
-
-class SensorProvider(UnavailableProvider):
-    name = "SENSOR_PROVIDER"
-
-
-class IoTSensorProvider(UnavailableProvider):
-    name = "IOT_SENSOR_PROVIDER"
-
-
-class AirQualityProvider(UnavailableProvider):
-    name = "AIR_QUALITY_PROVIDER"
+if __name__ == "__main__":
+    runtime = FireguardRuntime()
+    print(json.dumps(runtime.get_status(), indent=2))

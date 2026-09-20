@@ -1,15 +1,37 @@
 from __future__ import annotations
 
-
-def area_proxy(bbox: tuple[float, float, float, float]) -> float:
-    """Return a visual-area proxy only. This is not a calibrated physical area estimate."""
-    x1, y1, x2, y2 = bbox
-    width = abs(x2 - x1)
-    height = abs(y2 - y1)
-    return width * height
+from dataclasses import dataclass
 
 
-def growth_rate(previous: float, current: float) -> float:
-    if previous == 0:
-        return 0.0
-    return ((current - previous) / previous) * 100.0
+def risk_level(score: float) -> str:
+    if score < 20:
+        return "LOW"
+    if score < 40:
+        return "GUARDED"
+    if score < 60:
+        return "MODERATE"
+    if score < 80:
+        return "HIGH"
+    return "CRITICAL"
+
+
+@dataclass
+class RiskWeights:
+    visual: float = 0.25
+    persistence: float = 0.15
+    growth: float = 0.15
+    wind: float = 0.10
+    temperature: float = 0.10
+    humidity: float = 0.10
+    dryness: float = 0.10
+    smoke: float = 0.05
+
+
+def calculate_risk(features: dict[str, float], weights: RiskWeights | None = None) -> dict[str, float | str | dict]:
+    weights = weights or RiskWeights()
+    score = 0.0
+    for key in weights.__annotations__:
+        value = float(features.get(key, 0.0))
+        score += min(max(value, 0.0), 100.0) * getattr(weights, key)
+    score = min(100.0, max(0.0, score))
+    return {"score": round(score, 2), "level": risk_level(score), "features": features}

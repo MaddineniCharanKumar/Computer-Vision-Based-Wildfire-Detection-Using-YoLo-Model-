@@ -1,16 +1,17 @@
-# Dashboard
+# Documentation
 
-The dashboard should consume the live API and websocket outputs to visualize detection, environment, risk, alerts, and forecast data without inventing measurement values.
+This directory contains the core project documentation for setup, architecture, dataset handling, and evaluation.
 
-## Dashboard responsibilities
+## Key documents
 
-- show system health and provider state;
-- show live or recent detection results;
-- display environmental readings with freshness labels;
-- render risk and alert history;
-- display map context and short-term forecast overlays;
-- clearly indicate unavailable or stale data states.
+- `architecture.md` — backend and service layout.
+- `api.md` — API route overview.
+- `dataset.md` — dataset validation and preparation procedures.
+- `deployment.md` — deployment notes and environment configuration.
+- `gpu.md` — GPU and edge runtime notes.
+- `model.md` — model lifecycle and inference guidance.
+- `risk-engine.md` — risk and alerting explanation.
 
-## Data policy
+## Project principle
 
-The frontend must never silently replace missing or stale live data with demo values. Any display of demo mode should be explicitly labeled in the UI.
+All documentation should reflect how the system actually behaves in production: real measurements, provider failures, explicit freshness states, and honest evaluation results.
