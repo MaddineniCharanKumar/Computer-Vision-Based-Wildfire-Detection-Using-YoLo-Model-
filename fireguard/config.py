@@ -19,8 +19,13 @@ class Settings(BaseSettings):
     minimum_persistence: int = 3
     camera_frame_skip: int = 0
 
-    environment_provider: str = "unavailable"
+    latitude: float | None = None
+    longitude: float | None = None
+    live_poll_seconds: int = 60
+
+    environment_provider: str = "open_meteo"
     weather_api_url: str = "https://api.open-meteo.com/v1/forecast"
+    air_quality_api_url: str = "https://air-quality-api.open-meteo.com/v1/air-quality"
     weather_api_key: str | None = None
     environment_max_age_seconds: int = 300
     environment_timeout_seconds: float = 10.0
@@ -30,11 +35,21 @@ class Settings(BaseSettings):
 
     camera_url: str | None = None
     camera_id: str = "default-camera"
-    satellite_provider: str = "none"
-    terrain_provider: str = "none"
+
+    firms_map_key: str | None = None
+    firms_source: str = "VIIRS_NOAA21_NRT"
+    firms_region: str = "world"
+    firms_days: int = 1
+    satellite_provider: str = "firms"
+
+    elevation_api_url: str = "https://api.open-meteo.com/v1/elevation"
+    terrain_provider: str = "open_meteo_elevation"
+
+    vegetation_api_url: str | None = None
     vegetation_provider: str = "none"
 
     alert_threshold: float = 0.6
     forecast_horizons: str = "30,60"
+
 
 settings = Settings()
