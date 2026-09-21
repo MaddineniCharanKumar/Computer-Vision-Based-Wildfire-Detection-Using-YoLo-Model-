@@ -23,13 +23,50 @@ async function getJSON(path) {
 function useDashboard() {
   const [data, setData] = useState(null)
   const [error, setError] = useState('')
+  const [live, setLive] = useState(false)
   const load = async () => {
     try { setData(await getJSON('/api/dashboard/summary')); setError('') }
-    catch (e) { setError(e.message); }
+    catch (e) { setError(e.message) }
   }
-  useEffect(() => { load(); const id = setInterval(load, 15000); return () => clearInterval(id) }, [])
-  return { data, error, refresh: load }
+  useEffect(() => {
+    load()
+    const wsBase = API ? API.replace(/^http/, 'ws') : `ws://${window.location.host}`
+    const ws = new WebSocket(`${wsBase}/ws/live`)
+    ws.onopen = () => { setLive(true); ws.send('subscribe') }
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data)
+        if (msg.type === 'live_update') {
+          setData(prev => prev ? {
+            ...prev,
+            timestamp: msg.timestamp,
+            environment: msg.environment || prev.environment,
+            satellite_fires: msg.satellite?.fires || prev.satellite_fires || [],
+            live: { ...prev.live, timestamp: msg.timestamp, sources: {
+              ...prev.live?.sources,
+              weather: msg.environment?.status || prev.live?.sources?.weather,
+              air_quality: msg.environment?.air_quality_status || prev.live?.sources?.air_quality,
+              terrain: msg.terrain?.terrain_status || prev.live?.sources?.terrain,
+              satellite: msg.satellite?.satellite_status || prev.live?.sources?.satellite,
+            }},
+            providers: {
+              ...prev.providers,
+              satellite: msg.satellite?.satellite_status || prev.providers?.satellite,
+              terrain: msg.terrain?.terrain_status || prev.providers?.terrain,
+            }
+          } : prev)
+        }
+      } catch (_) {}
+    }
+    ws.onerror = () => setLive(false)
+    ws.onclose = () => setLive(false)
+    const id = setInterval(load, 60000)
+    return () => { clearInterval(id); ws.close() }
+  }, [])
+  return { data, error, live, refresh: load }
 }
+
+function dashboardLive(data) { return data?.live?.timestamp && data?.health?.status === 'healthy' }
 
 function Shell({ children, data, error }) {
   const location = useLocation()
@@ -37,7 +74,7 @@ function Shell({ children, data, error }) {
   return <div className="app-shell">
     <aside className="sidebar">
       <div className="brand"><div className="brand-mark">ES</div><div><b>EcoSpread</b><span>YOLO COMMAND</span></div></div>
-      <div className="status-pill"><i className={status ? 'dot live' : 'dot'} />{data?.health?.demo_mode ? 'DEMO MODE' : status ? 'SYSTEM ONLINE' : 'API OFFLINE'}</div>
+      <div className="status-pill"><i className={dashboardLive(data) ? 'dot live' : 'dot'} />{data?.health?.demo_mode ? 'DEMO MODE' : dashboardLive(data) ? 'LIVE DATA' : status ? 'API ONLINE' : 'API OFFLINE'}</div>
       <nav>{nav.map(([to, icon, label]) => <NavLink key={to} to={to} className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'}><span>{icon}</span>{label}</NavLink>)}</nav>
       <div className="sidebar-footer">
         <div className="mini-source"><span>Model</span><b>{data?.model?.status || '—'}</b></div>
@@ -111,7 +148,7 @@ function SourceList({data}) {
   const rows = [
     ['YOLO model', data?.model?.status, data?.model?.device],
     ['Weather', data?.environment?.status, data?.environment?.source],
-    ['Satellite', data?.providers?.satellite, 'Provider'],
+    ['Satellite / FIRMS', data?.providers?.satellite, data?.live?.sources?.satellite || 'Provider'],
     ['Terrain / DEM', data?.providers?.terrain, 'Provider'],
     ['Vegetation', data?.providers?.vegetation, 'Provider'],
     ['GPU', data?.gpu?.device, data?.gpu?.status],
@@ -122,7 +159,7 @@ function SourceList({data}) {
 function MapPage() {
   const {data} = useDashboard()
   const fire = data?.fires?.[0]
-  return <div className="page"><section className="map-layout"><div className="panel map-panel"><div className="panel-head"><div><span className="eyebrow">GEOSPATIAL COMMAND</span><h2>Live operational map</h2></div><div className="layer-row"><span>🔥 Fire</span><span>🟠 +30m</span><span>🔴 +60m</span><span>→ Wind</span></div></div><div className="map-canvas"><div className="map-grid"/><div className="contour contour-a"/><div className="contour contour-b"/>{fire?.latitude != null ? <div className="fire-pin" title="Current fire">🔥</div> : <div className="map-empty"><b>Geolocation unavailable</b><span>Configure UAV GPS/camera coordinates to place detections on the map.</span></div>}<div className="wind-arrow">→ → →</div></div></div><div className="panel"><span className="eyebrow">LAYERS</span><h2>Data availability</h2><div className="layer-list">{[['Current detection',!!fire],['30-min spread','forecast_30' in (data?.providers||{})],['60-min spread','forecast_60' in (data?.providers||{})],['FIRMS satellite',data?.providers?.satellite==='AVAILABLE'],['Terrain / DEM',data?.providers?.terrain==='AVAILABLE'],['Vegetation / NDVI',data?.providers?.vegetation==='AVAILABLE']].map(([x,on])=><div key={x}><i className={on?'dot live':'dot'}/><span>{x}</span><b>{on?'AVAILABLE':'UNAVAILABLE'}</b></div>)}</div></div></section></div>
+  return <div className="page"><section className="map-layout"><div className="panel map-panel"><div className="panel-head"><div><span className="eyebrow">GEOSPATIAL COMMAND</span><h2>Live operational map</h2></div><div className="layer-row"><span>🔥 Fire</span><span>🟠 +30m</span><span>🔴 +60m</span><span>→ Wind</span></div></div><div className="map-canvas"><div className="map-grid"/><div className="contour contour-a"/><div className="contour contour-b"/>{fire?.latitude != null ? <div className="fire-pin" title="Current fire">🔥</div> : null}{(data?.satellite_fires || []).slice(0,80).map((f,i)=><div key={f.event_id || i} className="sat-pin" style={{left:`${20 + ((Number(f.longitude)||0)+180)/360*60}%`,top:`${20 + (90-(Number(f.latitude)||0))/180*60}%`}} title={`NASA FIRMS · ${f.satellite || ''}`}>•</div>)}{!fire && !(data?.satellite_fires?.length) ? <div className="map-empty"><b>No live fire coordinates</b><span>Configure camera GPS or a NASA FIRMS MAP_KEY.</span></div> : null}<div className="wind-arrow">→ → →</div></div></div><div className="panel"><span className="eyebrow">LAYERS</span><h2>Data availability</h2><div className="layer-list">{[['Current detection',!!fire],['30-min spread','forecast_30' in (data?.providers||{})],['60-min spread','forecast_60' in (data?.providers||{})],['FIRMS satellite',data?.providers?.satellite==='AVAILABLE'],['Terrain / DEM',data?.providers?.terrain==='AVAILABLE'],['Vegetation / NDVI',data?.providers?.vegetation==='AVAILABLE']].map(([x,on])=><div key={x}><i className={on?'dot live':'dot'}/><span>{x}</span><b>{on?'AVAILABLE':'UNAVAILABLE'}</b></div>)}</div></div></section></div>
 }
 
 function FiresPage() {
