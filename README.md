@@ -80,3 +80,59 @@ API docs:
 ## Deployment note
 
 The project supports GPU acceleration when available, but it must continue safely on CPU or with unavailable providers. It must degrade gracefully and clearly report missing resources instead of generating fake results.
+
+
+## Realtime live-data configuration
+
+EcoSpread-YOLO now polls live external sources and pushes updates to the dashboard over WebSocket.
+
+### 1. Set the monitoring location
+
+Copy `.env.example` to `.env` and set:
+
+```env
+FIREGUARD_LATITUDE=<monitoring latitude>
+FIREGUARD_LONGITUDE=<monitoring longitude>
+FIREGUARD_LIVE_POLL_SECONDS=60
+```
+
+### 2. Live weather and air quality
+
+Open-Meteo is configured for current weather and air-quality observations:
+
+```env
+FIREGUARD_ENVIRONMENT_PROVIDER=open_meteo
+FIREGUARD_WEATHER_API_URL=https://api.open-meteo.com/v1/forecast
+FIREGUARD_AIR_QUALITY_API_URL=https://air-quality-api.open-meteo.com/v1/air-quality
+```
+
+### 3. NASA FIRMS satellite fire detections
+
+Create a free NASA FIRMS MAP_KEY and set:
+
+```env
+FIREGUARD_FIRMS_MAP_KEY=<your-map-key>
+FIREGUARD_FIRMS_SOURCE=VIIRS_NOAA21_NRT
+FIREGUARD_FIRMS_REGION=world
+FIREGUARD_FIRMS_DAYS=1
+```
+
+The backend exposes satellite detections at `/api/satellite/fires` and includes them in the live map.
+
+### 4. Run backend
+
+```bash
+uvicorn fireguard.api:app --host 0.0.0.0 --port 8000
+```
+
+### 5. Run dashboard
+
+```bash
+cd dashboard
+npm install
+npm run dev
+```
+
+The dashboard connects to `/ws/live` and receives live environment, satellite, terrain and detection updates. The REST summary is refreshed every 60 seconds as a fallback.
+
+If a provider is not configured or fails, the UI shows `UNAVAILABLE`/`CONFIG_REQUIRED` rather than inventing measurements.
