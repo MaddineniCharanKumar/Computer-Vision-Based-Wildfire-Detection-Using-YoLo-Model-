@@ -1,43 +1,91 @@
-# ForestGuard — Wildfire & Smoke Detection
+# ForestGuard Wildfire Intelligence
 
-ForestGuard is an evidence-first YOLO application for detecting **fire** and **smoke** in images and sampled video frames. It does not claim trained metrics or fabricate detections when weights or data are unavailable.
+This project is built for local wildfire and smoke detection using YOLO on images and sampled video frames. Keep the dataset in your local machine or mounted Drive folder, not in GitHub.
 
-## Dataset from Google Drive
+## Project structure
 
-Download the shared Drive folder locally or mount it in Colab, then inspect it:
+- `dataset/prepare_dataset.py` — prepares a local wildfire dataset into YOLO format
+- `training/train.py` — trains and validates YOLO wildfire detection models
+- `fireguard/api.py` — FastAPI backend for image and video analysis
+- `fireguard/runtime.py` — model wrapper and inference entry point
+- `fireguard/severity.py` — wildfire severity logic (`none`, `smoke_only`, `small_fire`, `active_wildfire`)
+- `dashboard/` — React dashboard for upload, thresholding, preview, and history
+
+## Local setup
+
+### 1) Create a virtual environment
 
 ```bash
-python scripts/inspect_dataset.py --dataset /path/to/downloaded/folder --output reports
-python dataset/prepare_dataset.py --source /path/to/downloaded/folder --output data/processed
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
 ```
 
-The preparation script creates `images/`, `labels/`, `data.yaml`, class counts, split counts, and warns when no true-negative images are present. Do not commit the downloaded dataset or model weights.
-
-## Train
-
-The default is the lightweight `yolo26n` configuration. Select a larger checkpoint only after checking your GPU budget:
+### 2) Install dependencies
 
 ```bash
 pip install -e ".[ml,dev]"
-python training/train.py --data data/processed/data.yaml --weights yolo26n.pt --epochs 150 --batch 16
-# Training from scratch:
-python training/train.py --data data/processed/data.yaml --scratch
 ```
 
-Best weights are copied to `models/wildfire_yolo.pt`; real evaluation output is written to `reports/results.json`. Metrics are never reported until validation actually runs.
+### 3) Attach the dataset locally
 
-## Backend
+Place the dataset in a local folder such as:
+
+```text
+D:/datasets/wildfire
+```
+
+or
+
+```text
+/data/wildfire
+```
+
+The dataset should contain image files and optional labels. The prep script will convert it to YOLO format and create `data/processed`.
+
+### 4) Build the YOLO dataset
+
+```bash
+python dataset/prepare_dataset.py --source "D:/datasets/wildfire" --output data/processed
+```
+
+This will generate:
+
+- `data/processed/images/train`
+- `data/processed/images/val`
+- `data/processed/images/test`
+- `data/processed/labels/train`
+- `data/processed/labels/val`
+- `data/processed/labels/test`
+- `data/processed/data.yaml`
+- `data/processed/dataset_report.json`
+
+### 5) Train the model
+
+```bash
+python training/train.py --data data/processed/data.yaml --weights yolo26n.pt --epochs 150 --batch 16 --imgsz 640
+```
+
+For a scratch model:
+
+```bash
+python training/train.py --data data/processed/data.yaml --weights yolo26n.pt --scratch --epochs 150 --batch 16 --imgsz 640
+```
+
+The best model is saved to:
+
+```text
+models/wildfire_yolo.pt
+```
+
+### 6) Start the backend
 
 ```bash
 cp .env.example .env
 uvicorn fireguard.api:app --reload --host 0.0.0.0 --port 8000
 ```
 
-`POST /api/analyze` accepts images and videos. Videos are sampled at `FIREGUARD_FRAME_INTERVAL_SECONDS` (default one second). Use `?confidenceThreshold=0.5`. Results contain bounding boxes, class, confidence, per-frame severity, aggregate severity, and history is available at `GET /api/history`.
-
-Severities: `none`, `smoke_only`, `small_fire`, `active_wildfire`. Webhook alerts for active wildfire are optional and rate-limited by `FIREGUARD_ALERT_COOLDOWN_SECONDS`.
-
-## Dashboard
+### 7) Start the frontend
 
 ```bash
 cd dashboard
@@ -45,4 +93,32 @@ npm install
 npm run dev
 ```
 
-Set `VITE_API_BASE=http://localhost:8000` in `dashboard/.env`. The dashboard includes image/video upload, confidence control, canvas-style bounding-box visualization, severity cards, and detection history. Keep the existing telemetry pages for optional weather, satellite, and geospatial integrations.
+Set the API base if needed:
+
+```env
+VITE_API_BASE=http://localhost:8000
+```
+
+## Dataset notes
+
+- Do not commit large image folders, label folders, or trained weights to GitHub.
+- The project expects a local dataset path and will warn if there are no true-negative images.
+- Use `data/processed` local output for training, which is much easier and faster than training directly from the full raw drive folder.
+
+## API
+
+- `POST /api/analyze?confidenceThreshold=0.35` — upload an image or video file
+- `GET /api/history` — recent detection log
+- `GET /api/model/status` — model health and path
+- `GET /api/health` — backend status
+
+## Severity levels
+
+- `none`
+- `smoke_only`
+- `small_fire`
+- `active_wildfire`
+
+## Important
+
+For real deployment, confirm the local dataset has no-fire images, otherwise false alarms may be inflated. The project will flag this in its dataset report.

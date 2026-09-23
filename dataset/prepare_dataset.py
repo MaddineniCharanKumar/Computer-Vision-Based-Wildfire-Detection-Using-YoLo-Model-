@@ -1,65 +1,120 @@
 from __future__ import annotations
 
 import argparse
-import io
 import json
-import time
+import random
+import shutil
 from collections import Counter
 from pathlib import Path
-from typing import Any
-
-from PIL import Image
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 CLASS_NAMES = ["fire", "smoke"]
 
 
-def locate_label(image: Path, source: Path) -> Path | None:
-    candidates = [image.with_suffix(".txt"), source / "labels" / image.relative_to(source).with_suffix(".txt")]
-    return next((candidate for candidate in candidates if candidate.exists()), None)
+def find_label_path(image: Path, source_root: Path) -> Path | None:
+    candidates = [
+        image.with_suffix(".txt"),
+        source_root / "labels" / image.relative_to(source_root).with_suffix(".txt"),
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def build_dataset(source: Path, output: Path, seed: int = 42, train_ratio: float = 0.7, val_ratio: float = 0.2) -> dict:
+    images = sorted(path for path in source.rglob("*") if path.suffix.lower() in IMAGE_EXTENSIONS)
+    if not images:
+        raise SystemExit(f"No image files found under {source}. Attach the dataset locally and point --source at it.")
+
+    random.Random(seed).shuffle(images)
+    cutoff_1 = int(len(images) * train_ratio)
+    cutoff_2 = int(len(images) * (train_ratio + val_ratio))
+    splits = {
+        "train": images[:cutoff_1],
+        "val": images[cutoff_1:cutoff_2],
+        "test": images[cutoff_2:],
+    }
+
+    class_counts = Counter()
+    true_negatives = 0
+    invalid_label_lines = 0
+
+    for split_name, members in splits.items():
+        image_dir = output / "images" / split_name
+        label_dir = output / "labels" / split_name
+        image_dir.mkdir(parents=True, exist_ok=True)
+        label_dir.mkdir(parents=True, exist_ok=True)
+
+        for index, image_path in enumerate(members):
+            safe_name = f"{image_path.stem}_{index:06d}{image_path.suffix.lower()}"
+            shutil.copy2(image_path, image_dir / safe_name)
+
+            label_path = find_label_path(image_path, source)
+            output_label = label_dir / f"{Path(safe_name).stem}.txt"
+            if label_path and label_path.exists():
+                content = label_path.read_text(encoding="utf-8", errors="ignore")
+            else:
+                content = ""
+
+            cleaned_lines = []
+            for line in content.splitlines():
+                fields = line.strip().split()
+                if len(fields) != 5:
+                    invalid_label_lines += 1
+                    continue
+                try:
+                    cls_id = int(fields[0])
+                    values = [float(value) for value in fields[1:]]
+                    if not all(0.0 <= value <= 1.0 for value in values):
+                        raise ValueError
+                except ValueError:
+                    invalid_label_lines += 1
+                    continue
+                if cls_id < 0 or cls_id >= len(CLASS_NAMES):
+                    invalid_label_lines += 1
+                    continue
+                class_counts[cls_id] += 1
+                cleaned_lines.append(line.strip())
+
+            if not cleaned_lines:
+                true_negatives += 1
+
+            output_label.write_text("\n".join(cleaned_lines) + ("\n" if cleaned_lines else ""), encoding="utf-8")
+
+    yaml_text = (
+        f"path: {output.resolve()}\n"
+        "train: images/train\n"
+        "val: images/val\n"
+        "test: images/test\n"
+        f"names: [{', '.join(CLASS_NAMES)}]\n"
+        "nc: 2\n"
+    )
+    (output / "data.yaml").write_text(yaml_text, encoding="utf-8")
+
+    report = {
+        "images": len(images),
+        "splits": {k: len(v) for k, v in splits.items()},
+        "class_instances": {CLASS_NAMES[k]: v for k, v in sorted(class_counts.items())},
+        "true_negative_images": true_negatives,
+        "invalid_labels": invalid_label_lines,
+        "warning": "No true-negative images were found. False-alarm risk may be inflated in real deployment." if true_negatives == len(images) else None,
+    }
+    (output / "dataset_report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+    print(json.dumps(report, indent=2))
+    return report
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Convert a local/Drive YOLO export into a clean fire/smoke dataset.")
-    parser.add_argument("--source", type=Path, required=True)
-    parser.add_argument("--output", type=Path, default=Path("data/processed"))
+    parser = argparse.ArgumentParser(description="Prepare a local wildfire dataset into YOLO format.")
+    parser.add_argument("--source", type=Path, required=True, help="Local dataset folder or mounted Drive folder")
+    parser.add_argument("--output", type=Path, default=Path("data/processed"), help="Output directory for prepared YOLO dataset")
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--train", type=float, default=.7)
-    parser.add_argument("--val", type=float, default=.2)
+    parser.add_argument("--train", type=float, default=0.7)
+    parser.add_argument("--val", type=float, default=0.2)
     args = parser.parse_args()
-    import random, shutil
-    images = [path for path in args.source.rglob("*") if path.suffix.lower() in IMAGE_EXTENSIONS]
-    if not images:
-        raise SystemExit(f"No images found under {args.source}. Download/mount the Drive folder first.")
-    random.Random(args.seed).shuffle(images)
-    first = int(len(images) * args.train); second = int(len(images) * (args.train + args.val))
-    splits = {"train": images[:first], "val": images[first:second], "test": images[second:]}
-    classes = Counter(); true_negatives = 0; invalid = 0
-    for split, members in splits.items():
-        for index, image in enumerate(members):
-            label = locate_label(image, args.source)
-            stem = f"{image.stem}_{index:07d}"
-            image_dir, label_dir = args.output / "images" / split, args.output / "labels" / split
-            image_dir.mkdir(parents=True, exist_ok=True); label_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(image, image_dir / f"{stem}{image.suffix.lower()}")
-            content = label.read_text(encoding="utf-8", errors="ignore") if label else ""
-            if not content.strip(): true_negatives += 1
-            valid_lines = []
-            for line in content.splitlines():
-                fields = line.split()
-                if len(fields) != 5 or not fields[0].isdigit(): invalid += 1; continue
-                class_id = int(fields[0])
-                if class_id >= len(CLASS_NAMES): invalid += 1; continue
-                try:
-                    values = [float(value) for value in fields[1:]]
-                    if not all(0 <= value <= 1 for value in values): raise ValueError
-                except ValueError: invalid += 1; continue
-                classes[class_id] += 1; valid_lines.append(line)
-            (label_dir / f"{stem}.txt").write_text("\n".join(valid_lines) + ("\n" if valid_lines else ""), encoding="utf-8")
-    (args.output / "data.yaml").write_text(f"path: {args.output.resolve()}\ntrain: images/train\nval: images/val\ntest: images/test\nnames: {CLASS_NAMES}\nnc: 2\n", encoding="utf-8")
-    report = {"images": len(images), "splits": {key: len(value) for key, value in splits.items()}, "class_instances": {CLASS_NAMES[key]: value for key, value in classes.items()}, "true_negative_images": true_negatives, "invalid_labels": invalid, "warning": "No true-negative images found; false-alarm risk may be inflated." if true_negatives == 0 else None}
-    (args.output / "dataset_report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
-    print(json.dumps(report, indent=2))
+    build_dataset(args.source, args.output, args.seed, args.train, args.val)
 
 
-if __name__ == "__main__": main()
+if __name__ == "__main__":
+    main()
