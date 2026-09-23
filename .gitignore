@@ -26,6 +26,10 @@ runs/
 *.db
 *.sqlite
 
+data/processed/
+raw_data/
+local_dataset/
+
 # Frontend
 node_modules/
 dashboard/dist/
